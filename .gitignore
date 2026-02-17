@@ -1,0 +1,24 @@
+# Data files - too large for git, download from source
+*.csv
+*.csv.zip
+*.xlsx
+*.parquet
+*.zip
+
+# NPPES directory
+nppes/
+nppes_deactivated/
+
+# LEIE downloads
+leie/
+
+# Python environment
+.venv/
+__pycache__/
+*.pyc
+
+# macOS junk
+__MACOSX/
+
+# Claude Code internals
+.claude/
