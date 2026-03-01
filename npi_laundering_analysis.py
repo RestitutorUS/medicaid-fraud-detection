@@ -213,7 +213,7 @@ def compute_name_frequencies():
     total_names = len(name_freq)
     total_providers = df["name_count"].sum()
     print(f"  {total_names:,} unique (last, first) name pairs "
-          f"across {total_providers:,} individual providers")
+          f"across {total_names:,} individual providers")
     return name_freq
 
 
@@ -638,6 +638,11 @@ def compute_risk_scores(multi, leie_ind_matches, leie_org_matches,
 # =====================================================================
 
 def main():
+    """Main entry point for the NPI laundering analysis script.
+
+    Orchestrates the loading of data, building of networks, cross-referencing,
+    risk scoring, and reporting.
+    """
     # === STEP 1: Load LEIE ===
     section("LOADING DATA")
     leie = load_leie()
