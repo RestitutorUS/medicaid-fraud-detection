@@ -16,6 +16,7 @@ Input:  NPPES registry, deactivated NPI list, LEIE exclusion list,
 Output: ao_networks.parquet, laundering_flags.parquet, console report
 """
 
+import argparse
 import os
 import urllib.request
 
@@ -23,21 +24,21 @@ import duckdb
 import numpy as np
 import pandas as pd
 
-# --- File paths ---
-NPPES_CSV = "nppes/npidata_pfile_20050523-20260208.csv"
-DEACTIVATED_XLSX = "nppes_deactivated/NPPES Deactivated NPI Report 20260209.xlsx"
-SPENDING_CSV = "medicaid-provider-spending.csv"
-HH_FEATURES_PARQUET = "hh_features_national.parquet"
+# --- Default file paths ---
+DEFAULT_NPPES_CSV = "nppes/npidata_pfile_20050523-20260208.csv"
+DEFAULT_DEACTIVATED_XLSX = "nppes_deactivated/NPPES Deactivated NPI Report 20260209.xlsx"
+DEFAULT_SPENDING_CSV = "medicaid-provider-spending.csv"
+DEFAULT_HH_FEATURES_PARQUET = "hh_features_national.parquet"
 
 # LEIE: try download, fall back to local copy
-LEIE_URL = "https://oig.hhs.gov/exclusions/downloadables/UPDATED.csv"
-LEIE_DIR = "leie"
-LEIE_CSV = os.path.join(LEIE_DIR, "UPDATED.csv")
-LEIE_FALLBACK = "leie_exclusions.csv"
+DEFAULT_LEIE_URL = "https://oig.hhs.gov/exclusions/downloadables/UPDATED.csv"
+DEFAULT_LEIE_DIR = "leie"
+DEFAULT_LEIE_CSV = os.path.join(DEFAULT_LEIE_DIR, "UPDATED.csv")
+DEFAULT_LEIE_FALLBACK = "leie_exclusions.csv"
 
 # Output paths
-NETWORKS_PARQUET = "ao_networks.parquet"
-FLAGS_PARQUET = "laundering_flags.parquet"
+DEFAULT_NETWORKS_PARQUET = "ao_networks.parquet"
+DEFAULT_FLAGS_PARQUET = "laundering_flags.parquet"
 
 # Home health taxonomy prefixes
 HH_TAXONOMY_PREFIXES = ["251E", "253Z", "251J"]
@@ -53,30 +54,29 @@ def section(title):
 # Step 1: Load LEIE
 # =====================================================================
 
-def load_leie():
+def load_leie(leie_csv, leie_fallback):
     """Load OIG LEIE exclusion list. Download if needed, fall back to local."""
     leie_path = None
 
     # Try local download first
-    if os.path.exists(LEIE_CSV):
-        leie_path = LEIE_CSV
-        print(f"  Using existing LEIE: {LEIE_CSV}")
+    if os.path.exists(leie_csv):
+        leie_path = leie_csv
+        print(f"  Using existing LEIE: {leie_csv}")
     else:
         # Try downloading
         try:
-            os.makedirs(LEIE_DIR, exist_ok=True)
-            print(f"  Downloading LEIE from {LEIE_URL}...")
-            urllib.request.urlretrieve(LEIE_URL, LEIE_CSV)
-            leie_path = LEIE_CSV
-            print(f"  Downloaded to {LEIE_CSV}")
+            os.makedirs(DEFAULT_LEIE_DIR, exist_ok=True)
+            urllib.request.urlretrieve(DEFAULT_LEIE_URL, leie_csv)
+            leie_path = leie_csv
+            print(f"  Downloaded to {leie_csv}")
         except Exception as e:
             print(f"  Download failed: {e}")
 
     # Fall back to local copy
     if leie_path is None or not os.path.exists(leie_path):
-        if os.path.exists(LEIE_FALLBACK):
-            leie_path = LEIE_FALLBACK
-            print(f"  Falling back to local copy: {LEIE_FALLBACK}")
+        if os.path.exists(leie_fallback):
+            leie_path = leie_fallback
+            print(f"  Falling back to local copy: {leie_fallback}")
         else:
             print("  ERROR: No LEIE data available.")
             return pd.DataFrame()
@@ -99,7 +99,7 @@ def load_leie():
 # Step 2: DuckDB Extraction
 # =====================================================================
 
-def extract_org_npis():
+def extract_org_npis(nppes_csv):
     """Extract organizational NPIs with authorized officials from NPPES."""
     conn = duckdb.connect()
 
@@ -123,7 +123,7 @@ def extract_org_npis():
         UPPER(TRIM("Authorized Official First Name")) AS ao_first,
         UPPER(TRIM(COALESCE("Authorized Official Middle Name", ''))) AS ao_middle,
         "Authorized Official Telephone Number" AS ao_phone
-    FROM read_csv('{NPPES_CSV}', header=true, quote='"', all_varchar=true)
+    FROM read_csv('{nppes_csv}', header=true, quote='"', all_varchar=true)
     WHERE "Entity Type Code" = '2'
       AND "Authorized Official Last Name" IS NOT NULL
       AND TRIM("Authorized Official Last Name") != ''
@@ -147,7 +147,7 @@ def extract_org_npis():
     return df
 
 
-def extract_deactivated_individuals():
+def extract_deactivated_individuals(nppes_csv, deactivated_xlsx):
     """Extract deactivated individual providers from NPPES + deactivated list."""
     conn = duckdb.connect()
     conn.execute("INSTALL spatial; LOAD spatial;")
@@ -155,7 +155,7 @@ def extract_deactivated_individuals():
     query = f"""
     WITH deactivated_list AS (
         SELECT DISTINCT CAST("Field1" AS VARCHAR) AS npi
-        FROM st_read('{DEACTIVATED_XLSX}')
+        FROM st_read('{deactivated_xlsx}')
         WHERE TRY_CAST("Field1" AS BIGINT) IS NOT NULL
     )
     SELECT
@@ -165,7 +165,7 @@ def extract_deactivated_individuals():
         n."Provider Business Practice Location Address State Name" AS ind_state,
         CAST(n."NPI Deactivation Date" AS VARCHAR) AS deactivation_date,
         n."Healthcare Provider Taxonomy Code_1" AS ind_taxonomy
-    FROM read_csv('{NPPES_CSV}', header=true, quote='"', all_varchar=true) n
+    FROM read_csv('{nppes_csv}', header=true, quote='"', all_varchar=true) n
     LEFT JOIN deactivated_list d ON CAST(n."NPI" AS VARCHAR) = d.npi
     WHERE n."Entity Type Code" = '1'
       AND (
@@ -182,7 +182,7 @@ def extract_deactivated_individuals():
     return df
 
 
-def compute_name_frequencies():
+def compute_name_frequencies(nppes_csv):
     """Count (last, first) name pairs among individual providers in NPPES.
 
     Returns a dict {(LAST, FIRST): count} used to penalize common-name
@@ -195,7 +195,7 @@ def compute_name_frequencies():
         UPPER(TRIM("Provider Last Name (Legal Name)")) AS last_name,
         UPPER(TRIM("Provider First Name")) AS first_name,
         COUNT(*) AS name_count
-    FROM read_csv('{NPPES_CSV}', header=true, quote='"', all_varchar=true)
+    FROM read_csv('{nppes_csv}', header=true, quote='"', all_varchar=true)
     WHERE "Entity Type Code" = '1'
       AND "Provider Last Name (Legal Name)" IS NOT NULL
       AND TRIM("Provider Last Name (Legal Name)") != ''
@@ -475,7 +475,7 @@ def crossref_deactivated_individuals(multi, deact_ind):
 # Step 5: Spending Exposure
 # =====================================================================
 
-def get_spending_exposure(multi):
+def get_spending_exposure(multi, spending_csv):
     """Get Medicaid spending for all NPIs controlled by multi-NPI officials."""
     # Collect all NPIs
     all_npis = set()
@@ -495,7 +495,7 @@ def get_spending_exposure(multi):
         SUM(s.TOTAL_UNIQUE_BENEFICIARIES) AS total_beneficiaries,
         COUNT(DISTINCT s.HCPCS_CODE) AS num_hcpcs,
         COUNT(DISTINCT s.CLAIM_FROM_MONTH) AS num_months
-    FROM read_csv('{SPENDING_CSV}', header=true, auto_detect=true) s
+    FROM read_csv('{spending_csv}', header=true, auto_detect=true) s
     INNER JOIN flagged_npis f ON s.BILLING_PROVIDER_NPI_NUM = f.npi
     GROUP BY s.BILLING_PROVIDER_NPI_NUM
     """
@@ -643,14 +643,26 @@ def main():
     Orchestrates the loading of data, building of networks, cross-referencing,
     risk scoring, and reporting.
     """
+    parser = argparse.ArgumentParser(description="NPI Laundering Analysis")
+    parser.add_argument('--nppes-csv', default=DEFAULT_NPPES_CSV, help='Path to NPPES CSV')
+    parser.add_argument('--deactivated-xlsx', default=DEFAULT_DEACTIVATED_XLSX, help='Path to deactivated NPI XLSX')
+    parser.add_argument('--spending-csv', default=DEFAULT_SPENDING_CSV, help='Path to Medicaid spending CSV')
+    parser.add_argument('--hh-features-parquet', default=DEFAULT_HH_FEATURES_PARQUET, help='Path to HH features Parquet')
+    parser.add_argument('--leie-csv', default=DEFAULT_LEIE_CSV, help='Path to LEIE CSV')
+    parser.add_argument('--leie-fallback', default=DEFAULT_LEIE_FALLBACK, help='Path to LEIE fallback CSV')
+    parser.add_argument('--networks-parquet', default=DEFAULT_NETWORKS_PARQUET, help='Output path for networks Parquet')
+    parser.add_argument('--flags-parquet', default=DEFAULT_FLAGS_PARQUET, help='Output path for flags Parquet')
+    parser.add_argument('--top', type=int, default=30, help='Number of top officials to display in reports')
+    args = parser.parse_args()
+
     # === STEP 1: Load LEIE ===
     section("LOADING DATA")
-    leie = load_leie()
+    leie = load_leie(args.leie_csv, args.leie_fallback)
 
     # === STEP 2: DuckDB extraction ===
-    org_npis = extract_org_npis()
-    deact_ind = extract_deactivated_individuals()
-    name_freq_dict = compute_name_frequencies()
+    org_npis = extract_org_npis(args.nppes_csv)
+    deact_ind = extract_deactivated_individuals(args.nppes_csv, args.deactivated_xlsx)
+    name_freq_dict = compute_name_frequencies(args.nppes_csv)
 
     # === STEP 3: Build networks ===
     print("\nBuilding authorized official networks...")
@@ -664,7 +676,7 @@ def main():
 
     # === STEP 5: Spending exposure ===
     print("\nComputing spending exposure...")
-    spending = get_spending_exposure(multi)
+    spending = get_spending_exposure(multi, args.spending_csv)
 
     # === STEP 6: Risk scoring ===
     print("\nComputing risk scores...")
@@ -702,14 +714,14 @@ def main():
           f"${multi_spending:,.0f}")
 
     # --- 2. Top 30 Multi-NPI Officials ---
-    section("2. TOP 30 MULTI-NPI AUTHORIZED OFFICIALS (by risk score)")
-    top30 = multi.nsmallest(30, "risk_rank")
+    section(f"2. TOP {args.top} MULTI-NPI AUTHORIZED OFFICIALS (by risk score)")
+    topN = multi.nsmallest(args.top, "risk_rank")
 
     print(f"\n  {'Rank':>4s}  {'Last Name':<16s} {'First':<12s} "
           f"{'NPIs':>5s} {'Sts':>3s} {'Deact':>5s} {'LEIE':>5s} "
           f"{'Spending':>14s} {'Score':>6s}")
     print(f"  {'-'*74}")
-    for _, r in top30.iterrows():
+    for _, r in topN.iterrows():
         leie_flag = ""
         if r["has_leie_ind_match"]:
             leie_flag += f"I{int(r['leie_best_tier'])}"
@@ -724,7 +736,7 @@ def main():
 
     # Expand top 5
     print(f"\n  Expanded detail for top 5:\n")
-    for _, r in top30.head(5).iterrows():
+    for _, r in topN.head(5).iterrows():
         print(f"  [{r['risk_rank']}] {r['ao_last']}, {r['ao_first']} "
               f"— {r['npi_count']} NPIs across {r['num_states']} states "
               f"({', '.join(r['states'][:10])})")
@@ -925,8 +937,8 @@ def main():
     if len(hh_multi) > 0:
         # Cross-reference with HH features if available
         hh_features = None
-        if os.path.exists(HH_FEATURES_PARQUET):
-            hh_features = pd.read_parquet(HH_FEATURES_PARQUET)[
+        if os.path.exists(args.hh_features_parquet):
+            hh_features = pd.read_parquet(args.hh_features_parquet)[
                 ["hh_risk_rank", "hh_risk_score"]
             ]
 
@@ -1033,8 +1045,8 @@ def main():
     # Save networks parquet (drop list columns that don't serialize well)
     save_cols = [c for c in multi.columns
                  if c not in ("npi_list", "states", "org_names", "cities")]
-    multi[save_cols].to_parquet(NETWORKS_PARQUET, index=False)
-    print(f"\n  Saved {len(multi):,} multi-NPI official records to {NETWORKS_PARQUET}")
+    multi[save_cols].to_parquet(args.networks_parquet, index=False)
+    print(f"\n  Saved {len(multi):,} multi-NPI official records to {args.networks_parquet}")
 
     # Save flagged subset
     flags = multi[
@@ -1043,8 +1055,8 @@ def main():
         (multi["has_deact_ind_match"] == 1) |
         (multi["risk_rank"] <= 100)
     ].copy()
-    flags[save_cols].to_parquet(FLAGS_PARQUET, index=False)
-    print(f"  Saved {len(flags):,} flagged officials to {FLAGS_PARQUET}")
+    flags[save_cols].to_parquet(args.flags_parquet, index=False)
+    print(f"  Saved {len(flags):,} flagged officials to {args.flags_parquet}")
 
     print(f"\n{'='*70}")
     print("  NPI laundering analysis complete.")
