@@ -12,11 +12,12 @@ Outputs: provider_features_ca.parquet
 
 import duckdb
 
-SPENDING_CSV = "medicaid-provider-spending.csv"
-NPPES_CSV = "nppes/npidata_pfile_20050523-20260208.csv"
-DEACTIVATED_XLSX = "nppes_deactivated/NPPES Deactivated NPI Report 20260209.xlsx"
-OUTPUT_PARQUET = "provider_features_ca.parquet"
-STATE_FILTER = "CA"
+cfg = load_config()
+SPENDING_CSV = cfg["data"]["spending"]
+NPPES_CSV = cfg["data"]["nppes"]
+DEACTIVATED_XLSX = cfg["data"]["deactivated_xlsx"]
+OUTPUT_PARQUET = "data/processed/provider_features_ca.parquet"
+STATE_FILTER = cfg["state"]
 
 
 def build_features():

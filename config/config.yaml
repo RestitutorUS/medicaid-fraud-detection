@@ -1,0 +1,13 @@
+data:
+  spending: data/raw/medicaid-provider-spending.csv
+  nppes: data/raw/nppes/npidata_pfile_20050523-20260208.csv
+  deactivated_xlsx: data/raw/nppes_deactivated/NPPES Deactivated NPI Report 20260209.xlsx
+  hh_features: data/processed/hh_features_national.parquet
+  provider_scores: data/processed/provider_scores_ca.parquet
+state: CA
+top_n: 30
+hh:
+  taxonomy_prefixes: ["251E", "253Z", "251J"]
+model:
+  random_seed: 42
+  isolation_forest_estimators: 200

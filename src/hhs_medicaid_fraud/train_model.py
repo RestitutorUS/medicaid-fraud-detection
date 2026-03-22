@@ -14,9 +14,10 @@ import pandas as pd
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 
-INPUT_PARQUET = "provider_features_ca.parquet"
-OUTPUT_PARQUET = "provider_scores_ca.parquet"
-RANDOM_SEED = 42
+cfg = load_config()
+INPUT_PARQUET = "data/processed/provider_features_ca.parquet"
+OUTPUT_PARQUET = "data/processed/provider_scores_ca.parquet"
+RANDOM_SEED = cfg["model"]["random_seed"]
 
 # Features to log-transform (heavily right-skewed, strictly positive)
 LOG_FEATURES = [
@@ -46,26 +47,7 @@ MODEL_FEATURES = [
 ]
 
 
-def preprocess(df):
-    """Log-transform skewed features, fill NaN, standardize."""
-    X = df[MODEL_FEATURES].copy()
-
-    # Fill NaN in revenue_concentration (3,205 nulls — providers with
-    # only one row where top_code_paid/total_paid produces NULL)
-    X["revenue_concentration"] = X["revenue_concentration"].fillna(1.0)
-
-    # Log-transform: log1p handles zeros gracefully
-    for col in LOG_FEATURES:
-        X[col] = np.log1p(X[col])
-
-    # Standardize all features
-    scaler = StandardScaler()
-    X_scaled = pd.DataFrame(
-        scaler.fit_transform(X),
-        columns=X.columns,
-        index=X.index,
-    )
-    return X_scaled, scaler
+from .utils import preprocess
 
 
 def statistical_baseline(X_scaled):
@@ -94,10 +76,7 @@ def isolation_forest(X_scaled):
     return scores, model
 
 
-def print_section(title):
-    print(f"\n{'='*60}")
-    print(f"  {title}")
-    print(f"{'='*60}")
+from .utils import print_section
 
 
 def main():

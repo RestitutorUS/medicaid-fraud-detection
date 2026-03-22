@@ -44,10 +44,7 @@ DEFAULT_FLAGS_PARQUET = "laundering_flags.parquet"
 HH_TAXONOMY_PREFIXES = ["251E", "253Z", "251J"]
 
 
-def section(title):
-    print(f"\n{'='*70}")
-    print(f"  {title}")
-    print(f"{'='*70}")
+from .utils import print_section
 
 
 # =====================================================================

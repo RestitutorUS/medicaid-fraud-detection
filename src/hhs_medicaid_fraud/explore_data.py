@@ -8,31 +8,16 @@ row count and a true uniform random sample for statistical summaries.
 import duckdb
 import pandas as pd
 
-CSV_PATH = "medicaid-provider-spending.csv"
+cfg = load_config()
+CSV_PATH = cfg["data"]["spending"]
 SAMPLE_SIZE = 10_000
-RANDOM_SEED = 42
+RANDOM_SEED = cfg["model"]["random_seed"]
 
 
-def load_sample_duckdb(path, sample_size, seed):
-    """Get total row count and a true random sample using DuckDB."""
-    conn = duckdb.connect()
-    conn.sql(f"SELECT setseed({seed / 2**31:.10f})")  # DuckDB seed is 0-1 float
-
-    print("Counting total rows (full file scan)...")
-    count = conn.sql(f"SELECT COUNT(*) FROM '{path}'").fetchone()[0]
-    print(f"Total rows: {count:,}")
-
-    print(f"Drawing {sample_size:,} random rows from entire file...")
-    df = conn.sql(f"SELECT * FROM '{path}' USING SAMPLE {sample_size}").df()
-
-    conn.close()
-    return count, df
+from .utils import load_sample_duckdb
 
 
-def print_section(title):
-    print(f"\n{'='*60}")
-    print(f"  {title}")
-    print(f"{'='*60}")
+from .utils import print_section
 
 
 def main():

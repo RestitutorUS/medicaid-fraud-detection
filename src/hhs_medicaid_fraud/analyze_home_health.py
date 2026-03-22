@@ -21,12 +21,13 @@ import numpy as np
 import pandas as pd
 import duckdb
 
-SPENDING_CSV = "medicaid-provider-spending.csv"
-NPPES_CSV = "nppes/npidata_pfile_20050523-20260208.csv"
-SCORES_PARQUET = "provider_scores_ca.parquet"
-HH_CLAIMS_PARQUET = "hh_claims_national.parquet"
-HH_CLAIMS_CA_PARQUET = "hh_claims_ca.parquet"
-HH_FEATURES_PARQUET = "hh_features_national.parquet"
+cfg = load_config()
+SPENDING_CSV = cfg["data"]["spending"]
+NPPES_CSV = cfg["data"]["nppes"]
+SCORES_PARQUET = cfg["data"]["provider_scores"]
+HH_CLAIMS_PARQUET = "data/processed/hh_claims_national.parquet"
+HH_CLAIMS_CA_PARQUET = "data/processed/hh_claims_ca.parquet"
+HH_FEATURES_PARQUET = "data/processed/hh_features_national.parquet"
 
 # Home health taxonomy prefixes
 HH_TAXONOMY_PREFIXES = ["251E", "253Z", "251J"]
@@ -53,10 +54,7 @@ HH_CATEGORIES = [
 ]
 
 
-def section(title):
-    print(f"\n{'='*70}")
-    print(f"  {title}")
-    print(f"{'='*70}")
+from .utils import print_section
 
 
 def extract_hh_claims():

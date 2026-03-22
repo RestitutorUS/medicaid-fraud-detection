@@ -18,8 +18,9 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
-SCORES_PARQUET = "provider_scores_ca.parquet"
-FEATURES_PARQUET = "provider_features_ca.parquet"
+cfg = load_config()
+SCORES_PARQUET = cfg["data"]["provider_scores"]
+FEATURES_PARQUET = cfg["data"]["provider_features"]
 
 # Same preprocessing as train_model.py to get z-scores per feature
 LOG_FEATURES = [
@@ -41,23 +42,10 @@ MODEL_FEATURES = [
 ]
 
 
-def compute_zscores(df):
-    """Reproduce the z-score matrix from train_model.py preprocessing."""
-    X = df[MODEL_FEATURES].copy()
-    X["revenue_concentration"] = X["revenue_concentration"].fillna(1.0)
-    for col in LOG_FEATURES:
-        X[col] = np.log1p(X[col])
-    scaler = StandardScaler()
-    Z = pd.DataFrame(
-        scaler.fit_transform(X), columns=X.columns, index=X.index
-    )
-    return Z
+from .utils import preprocess
 
 
-def section(title):
-    print(f"\n{'='*70}")
-    print(f"  {title}")
-    print(f"{'='*70}")
+from .utils import print_section
 
 
 def main():
